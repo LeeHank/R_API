@@ -1,0 +1,561 @@
+---
+title: "Handling JSON"
+author: "Hank Lee"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# library(tidyverse)
+library(dplyr)
+library(stringr)
+library(httr)
+library(jsonlite)
+```
+
+# JSON  
+
+* JSON有兩種表示方式：  
+  * Object: 由大括號組起來的字串(就是python的dictionary)  
+  * Array: 由中括號組起來的字串(就是python的list)  
+* 所以等一下講到object，就去聯想成python的dictionary，講到array，就去聯想到python的list，這樣就很清楚了。  
+
+## Object (其實就是python的dictionary)   
+
+### simple object：key-value的value是string/double/boolean  
+
+```
+{
+        "id":1,
+        "name": "Frank",
+        "age": 23,
+        "married": false
+}
+```
+
+* 從這筆資料來看，可以猜到他是在描述某一個人的狀態  
+* 包括這個人的id, name, age, married等資訊  
+
+#### 讀取.json檔  
+
+* 我們把剛剛這個simple_object，存成`simple_object.json`，那在R裡面就會用jsonlite的`read_json`來讀取  
+
+```{r}
+simple_object <- read_json("Handling_JSON/simple_object.json")
+simple_object
+```
+
+* 可以看到，讀進來的資料就是變成R的list  
+* 如果你想看他原始的樣貌，那可以用`toJSON()`  
+
+```{r}
+toJSON(simple_object)
+```
+
+* mm...看起來是JSON，但...好醜，我們可以加上`toJSON(,pretty = TRUE)`讓他排版漂亮點  
+
+```{r}
+toJSON(simple_object, pretty = TRUE)
+```
+
+* 如果要把這個R object寫成.json的檔案，那就用`write_json(simple_object, path)`    
+
+```{r eval = FALSE}
+write_json(simple_object, 
+           "Handling_JSON/simple_object2.json")
+```
+
+* 至於會寫出什麼呢？其實就是寫出你剛剛`toJSON()`看到的東西  
+
+#### R自己練習時，就打成simple_object的字串就ok了  
+
+* 如果我沒有.json檔，但我又想練習一下import .json檔，或是處理json資料的code，那其實你就直接 assign 一個JSON style的字串就好(特別小心，此字串要用單引號，因為裡面的key都是雙引號)：  
+
+```{r}
+simple_object_string <- '{
+        "id":1,
+        "name": "Frank",
+        "age": 23,
+        "married": false
+}'
+```
+
+* 讀這種字串型的JSON，用的function是`fromJSON()`  
+
+```{r}
+fromJSON(simple_object_string)
+```
+
+#### API讀進來的資料就是這種simple_object  
+
+```{r}
+# 去GET這個API的資料
+get_result <- GET("http://httpbin.org/get")
+# 用`http_type()`來確認GET來的東西，是哪種格式
+http_type(get_result)
+```
+
+* 果然是JSON，我們可以用`content(get_result, as = "text")` 將這個JSON結果print出來  
+
+```{r}
+content(get_result, as = "text") %>%
+        cat()
+```
+
+* 但我們當然對這種string格式沒興趣，我們想直接parse他，那可以用`content(get_result, as = "parsed")`來parse這個結果  
+
+```{r}
+content(get_result, as = "parsed")
+```
+
+* 或是，直接用`fromJSON()` 來parse  
+
+```{r}
+content(get_result, as = "text") %>%
+        fromJSON()
+```
+
+#### wrangling  
+
+* 回頭舉剛剛的例子：  
+
+```{r}
+simple_object_string <- '{
+        "id":1,
+        "name": "Frank",
+        "age": 23,
+        "married": false
+}'
+
+r_json <- fromJSON(simple_object_string)
+r_json
+```
+
+* 對這種資料類型，我們還是蠻喜歡轉成data.frame的  
+* 把list轉成data.frame，最簡單的方式就是`dplyr::bind_rows()`  
+
+```{r}
+r_json %>%
+        bind_rows()
+```
+
+* 如果想把list轉成name vector，那就`unlist()`就好  
+
+```{r}
+r_json %>%
+        unlist()
+```
+
+### object of object ：key-value的value是另一個dictionary  
+
+```
+{
+        "id":1,
+        "name": "Frank",
+        "age": 23,
+        "married": false,
+        "partner":{
+                "id":4,
+                "name":"Julie"
+        }
+}
+```
+
+* 延續剛剛，現在如果想多描述這個人的partner是誰，而他的partner因為又是另一個人，所以也會有多個特徵在描述他，那就會組成現在這種object of object的格式了  
+
+#### 讀取.json檔  
+
+* 我們把這個object of object，存成`object_of_object.json`，那在R裡面就會用jsonlite的`read_json`來讀取  
+
+```{r}
+object_of_object <- read_json("Handling_JSON/object_of_object.json")
+object_of_object
+```
+
+* 可以看到，讀進來的資料就是變成R的list of list 
+* 要看他階層的架構，就用`str()`  
+
+```{r}
+str(object_of_object)
+```
+
+* nice，如果你想把這種R object，轉成JSON，那可以用`toJSON()`  
+
+```{r}
+toJSON(object_of_object, pretty = TRUE)
+```
+
+* 如果要把這個R object寫成.json的檔案，那就用`write_json(simple_object, path)`    
+
+```{r eval = FALSE}
+write_json(object_of_object, 
+           "Handling_JSON/object_of_object2.json")
+```
+
+* 至於會寫出什麼呢？其實就是寫出你剛剛`toJSON()`看到的東西  
+
+#### R自己練習時，就打成字串就ok了  
+
+* 如果我沒有.json檔，但我又想練習一下import .json檔，或是處理json資料的code，那其實你就直接 assign 一個JSON style的字串就好(特別小心，此字串要用單引號，因為裡面的key都是雙引號)：  
+
+```{r}
+object_of_object_string <- '{
+        "id":1,
+        "name": "Frank",
+        "age": 23,
+        "married": false,
+        "partner":{
+                "id":4,
+                "name":"Julie"
+        }
+}'
+```
+
+* 讀這種字串型的JSON，用的function是`fromJSON()`  
+
+```{r}
+fromJSON(object_of_object_string)
+```
+
+#### API讀進來的資料就是這種object_of_object  
+
+#### wrangling  
+
+* 回頭舉剛剛的例子：  
+
+```{r}
+object_of_object_string <- '{
+        "id":1,
+        "name": "Frank",
+        "age": 23,
+        "married": false,
+        "partner":{
+                "id":4,
+                "name":"Julie"
+        }
+}'
+r_json <- fromJSON(object_of_object_string)
+str(r_json)
+```
+
+* 通常我們讀進來這種階層的資料，大概都是API或爬蟲下來的結果，而我們常常有興趣的，只會是其中的某個list，例如這邊的partner  
+* 所以，資料處理的技巧，就是先選擇這個sub-list，然後再把他轉成data.frame  
+
+```{r}
+r_json$partner %>%
+        bind_rows()
+```
+
+
+## Array (就是Python的list)  
+
+### Array of primitives: 最簡單的Array，每個element是stirng/double/boolean...  
+
+
+```
+[
+        "Amsterdam", 
+        "Rotterdam", 
+        null, 
+        "Den Haag"
+]
+```
+
+#### 讀取.json檔  
+
+* 我們把這個array of primitives，存成`array_of_primitives.json`，那在R裡面就會用jsonlite的`read_json`來讀取  
+
+```{r}
+array_of_primitives <- read_json("Handling_JSON/array_of_primitives.json")
+array_of_primitives
+```
+
+* 可以看到，讀進來的資料就是變成R的list   
+* nice，如果想把這種R object，轉成JSON，那可以用`toJSON()`  
+
+```{r}
+toJSON(array_of_primitives, pretty = TRUE)
+```
+
+* 如果要把這個R object寫成.json的檔案，那就用`write_json(array_of_primitives, path)`    
+
+```{r eval = FALSE}
+write_json(array_of_primitives, 
+           "Handling_JSON/array_of_primitives2.json")
+```
+
+* 至於會寫出什麼呢？其實就是寫出你剛剛`toJSON()`看到的東西  
+
+#### R自己練習時，就打成字串就ok了  
+
+* 如果我沒有.json檔，但我又想練習一下import .json檔，或是處理json資料的code，那其實你就直接 assign 一個JSON style的字串就好(特別小心，此字串要用單引號，因為裡面的key都是雙引號)：  
+
+```{r}
+array_of_primitives_string <- '[
+        "Amsterdam", 
+        "Rotterdam", 
+        null, 
+        "Den Haag"
+]'
+```
+
+* 讀這種字串型的JSON，用的function是`fromJSON()`  
+
+```{r}
+fromJSON(array_of_primitives_string)
+```
+
+* 可以注意到，null被置換成NA，而且，他自動幫你把R的list轉成vector  
+* 這是因為，`fromJSON`中的argument: `simplifyVector`，預設是TRUE，如果把它改成FALSE，那就還是會給你一個R的list  
+
+```{r}
+fromJSON(array_of_primitives_string, simplifyVector = FALSE)
+```
+
+#### API讀進來的資料就是這種array_of_primitives  
+
+#### wrangling  
+
+* 回頭舉剛剛的例子：
+
+```{r}
+array_of_primitives_string <- '[
+        "Amsterdam", 
+        "Rotterdam", 
+        null, 
+        "Den Haag"
+]'
+```
+
+* 這種這麼單純的array型式，其實就直接用` simplifyVector = TRUE`直接幹掉就好，就會變成我們要的vector  
+
+```{r}
+fromJSON(array_of_primitives_string, simplifyVector = TRUE)
+```
+
+### Array of objects: 最常出現的JSON，每個element是一個object  
+
+```
+[
+        {"name":"Erik", "age":43}, 
+        {"name":"Anna", "age":32}
+]
+```
+
+#### 讀取.json檔  
+
+* 我們把這個array of objects，存成`array_of_objects.json`，那在R裡面就會用jsonlite的`read_json`來讀取  
+
+```{r}
+array_of_objects <- read_json("Handling_JSON/array_of_objects.json")
+array_of_objects
+```
+
+* 可以看到，讀進來的資料就是變成R的list of list  
+* 看一下階層架構  
+
+```{r}
+str(array_of_objects)
+```
+
+* nice，如果想把這種R object，轉成JSON，那可以用`toJSON()`  
+
+```{r}
+toJSON(array_of_objects, pretty = TRUE)
+```
+
+* 如果要把這個R object寫成.json的檔案，那就用`write_json(array_of_objects, path)`    
+
+```{r eval = FALSE}
+write_json(array_of_objects, 
+           "Handling_JSON/array_of_objects2.json")
+```
+
+* 至於會寫出什麼呢？其實就是寫出你剛剛`toJSON()`看到的東西  
+
+#### R自己練習時，就打成字串就ok了  
+
+* 如果我沒有.json檔，但我又想練習一下import .json檔，或是處理json資料的code，那其實你就直接 assign 一個JSON style的字串就好(特別小心，此字串要用單引號，因為裡面的key都是雙引號)：  
+
+```{r}
+array_of_objects_string <- '[
+        {"name":"Erik", "age":43}, 
+        {"name":"Anna", "age":32}
+]'
+```
+
+* 讀這種字串型的JSON，用的function是`fromJSON()`  
+
+```{r}
+fromJSON(array_of_objects_string)
+```
+
+* 可以注意到，他自動幫你把R的list轉成data.frame!!  
+* 這是因為，`fromJSON`中的argument: `simplifyDataFrame`，預設是TRUE，如果把它改成FALSE，那就還是會給你一個R的list  
+
+```{r}
+fromJSON(array_of_objects_string, simplifyDataFrame = FALSE)
+```
+
+#### API讀進來的資料就是這種array_of_objects  
+
+#### wrangling  
+
+* 回頭舉剛剛的例子：  
+
+```{r}
+array_of_objects_string <- '[
+        {"name":"Erik", "age":43}, 
+        {"name":"Anna", "age":32}
+]'
+```
+
+* 這種array of objects的型式，直接用`simplifyDataFrame = TRUE`把他堆成data.frame就好  
+
+```{r}
+fromJSON(array_of_objects_string, simplifyDataFrame = TRUE)
+```
+
+* 但還是可以多學一招，如果今天API抓下來，就是長成list of list的樣子，如以下：  
+
+```{r}
+r_json <- fromJSON(array_of_objects_string, simplifyDataFrame = FALSE)
+r_json
+```
+
+* 架構長這樣：  
+
+```{r}
+str(r_json)
+```
+
+* 那可以發現，這個list下的每個sub-list，結構都長一樣，那就可以用`bind_row()`這招，直接疊成data.frame  
+
+```{r}
+r_json %>%
+        bind_rows()
+```
+
+
+### Array of arrays: 次常見的JSON，每個element還是一個array  
+
+```
+[
+        [1, 2, 3],
+        [4, 5, 6] 
+]
+```
+
+#### 讀取.json檔  
+
+* 我們把這個array of objects，存成`array_of_arrays.json`，那在R裡面就會用jsonlite的`read_json`來讀取  
+
+```{r}
+array_of_arrays <- read_json("Handling_JSON/array_of_arrays.json")
+array_of_arrays
+```
+
+* 可以看到，讀進來的資料就是變成R的list of list  
+* 看一下階層架構  
+
+```{r}
+str(array_of_arrays)
+```
+
+* nice，如果想把這種R object，轉成JSON，那可以用`toJSON()`  
+
+```{r}
+toJSON(array_of_arrays, pretty = TRUE)
+```
+
+* 如果要把這個R object寫成.json的檔案，那就用`write_json(array_of_objects, path)`    
+
+```{r eval = FALSE}
+write_json(array_of_objects, 
+           "Handling_JSON/array_of_arrays.json")
+```
+
+* 至於會寫出什麼呢？其實就是寫出你剛剛`toJSON()`看到的東西  
+
+#### R自己練習時，就打成字串就ok了  
+
+* 如果我沒有.json檔，但我又想練習一下import .json檔，或是處理json資料的code，那其實你就直接 assign 一個JSON style的字串就好(特別小心，此字串要用單引號，因為裡面的key都是雙引號)：  
+
+```{r}
+array_of_arrays_string <- '[
+        [1,2,3],
+        [4,5,6]
+]'
+```
+
+* 讀這種字串型的JSON，用的function是`fromJSON()`  
+
+```{r}
+fromJSON(array_of_arrays_string)
+```
+
+* 可以注意到，他自動幫你把R的list轉成matrix!!  
+* 這是因為，`fromJSON`中的argument: `simplifyMatrix`，預設是TRUE，如果把它改成FALSE，那就還是會給你一個R的list  
+
+```{r}
+fromJSON(array_of_arrays_string, simplifyMatrix = FALSE)
+```
+
+# toJSON  
+
+* 剛剛講了一堆從JSON格式，import到R的方式，這個方向比較像是我們跟API互動時，用GET method得到JSON response後，要如何匯入和轉成我們能分析的R object  
+* 但另一個方向，我們如果要用POST method，把我們的東西送去API，那...我們理論上應該要送JSON格式出去。所以，如何把R object轉成JSON呢？超簡單，就都用`toJSON()`這個function就好  
+
+## R vector to JSON  
+
+```{r}
+c(1, 2, 3) %>% toJSON(pretty = TRUE)
+```
+
+```{r}
+c(name = "Hank", height = 185, weight = 80) %>% toJSON(pretty = TRUE)
+```
+
+## R data.frame to JSON  
+
+```{r}
+data.frame(name = "Hank", height = 185, weight = 80) %>% 
+        toJSON(pretty = TRUE)
+```
+
+```{r}
+data.frame(name = c("Hank","pinpin"), 
+           height = c(185, 160), 
+           weight = c(80, 48)) %>% 
+        toJSON(pretty = TRUE)
+```
+
+## R matrix to JSON  
+
+```{r}
+matrix(1:9, 3, 3) %>% toJSON(pretty = TRUE)
+```
+
+## R list to JSON  
+
+```{r}
+list(name = "Hank", height = 185, weight = 80) %>% 
+        toJSON(pretty = TRUE)
+```
+
+```{r}
+list(name = "Hank", 
+     height = 185, 
+     weight = 80,
+     partner = list(
+             name = "pinpin",
+             height = 160,
+             weight = 48
+     )) %>% 
+        toJSON(pretty = TRUE)
+```
+

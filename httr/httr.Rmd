@@ -1,0 +1,215 @@
+---
+title: "用R連結對方API"
+date: "`r Sys.Date()`"
+output:
+  rmdformats::readthedown:
+    highlight: kate
+---
+
+
+```{r setup, include=FALSE}
+library(knitr)
+library(rmdformats)
+
+## Global options
+options(max.print="75")
+opts_chunk$set(echo=TRUE,
+	             cache=TRUE,
+               prompt=FALSE,
+               tidy=TRUE,
+               comment=NA,
+               message=FALSE,
+               warning=FALSE)
+opts_knit$set(width=75)
+```
+
+
+```{r}
+library(dplyr)
+library(httr)
+library(jsonlite)
+```
+
+
+* 這篇不是要講如何自己架一個API，而是如何和別人寫好的API互動，所以重點就擺在：我該怎麼寫code和現有的API來做互動  
+
+* 大概分成兩種方法：  
+  * 這個API，沒有R的client(他可能有幫Python寫好API client，但就是沒幫R寫)，那我們就得藉由`httr`這個package，來操作 "GET" 或 "POST" method，去和API server作互動  
+  * 這個API，已經很貼心的幫R user寫好了API client，那這個client當然就會是一個R package了，那我就直接用這個package的function來和API server互動就好。  
+
+
+# 用`httr`下`HTTP Verbs`，和對方API互動  
+
+## GET 
+
+### the request  
+
+* GET method 在 `httr`中的function，就叫`GET()`，裡面可以下的參數有：  
+  * url: 這是一定要寫的，可以寫完整的url(e.g. url = "https://v2.jokeapi.dev/joke/Programming?type=single")，或是只寫到對方的domain name，然後path和query留給後面寫(e.g. 寫 url = "https://v2.jokeapi.dev/"就好)  
+  * path: 這是optional的，如果前面的url沒有標明path的話，那可以在這邊寫清楚(e.g. path = "joke/Programming")  
+  * query: 這也是optional的，如果前面的url沒有標明query，那可以在這邊寫(e.g. query = list(type = "single"))  
+* 所以，下面這兩種寫法，結果都是一樣的  
+
+```{r}
+r1 = GET(url = "https://v2.jokeapi.dev/joke/Programming?type=single")
+r2 = GET(url = "https://v2.jokeapi.dev/", 
+         path = "joke/Programming",
+         query = list(type = "single"))
+r2
+```
+
+* 我們可以看到，這個response和我們用browser去查詢所得到的response是一樣的  
+
+### the response  
+
+* 回傳的response(`r2`)，總計有三個部分的訊息，只要`print(r2)`就可以一次看全部：  
+  * the status: 就是status code，例如 200 ok，或是404 not found。這部分可用`http_status(r2)`來取得。  
+  * the headers: 就response的一些摘要訊息，例如content-type, date,...。這部分可用`headers(r2)`來取得。  
+  * the body: 就是最重要的回傳訊息。在此例中就是JSON的結果。這部分可用`content(r2)`來取得  
+  
+```{r}
+http_status(r2)
+```
+
+```{r}
+headers(r2)[1:5]
+```
+
+```{r}
+content(r2)
+```
+
+* 對於這個`content(r2)`，我們可以多說一點。當我們沒有下其他參數時，他的預設其實是：`content(r2, as = "parsed")`。
+* 那`parsed`的意思，就是讓`httr`根據回傳的格式，去parse成R對應的格式。  
+* 而`httr`判斷我們的結果是JSON，所以就轉成R所對應的格式：list of list of list...  
+* 想知道回傳的格式是什麼，可以用`http_type()`來查詢  
+
+```{r}
+http_type(r2)
+```
+
+* 最後，我們也常常用`content(xxx, as = "text")`這個指令，把結果轉成純文字檔：  
+
+```{r}
+content(r2, as = "text")
+```
+
+* 這樣的好處是，全都是文字，我好處理。但壞處是，像現在的output就好醜，不容易閱讀。  
+* 那我們可以加入`cat()` function，讓他格式漂亮點：  
+
+```{r}
+content(r2, as = "text") %>%
+        cat()
+```
+
+* nice! 不折不扣的JSON格式  
+
+
+### 其他補充  
+
+* 當我們在用API的時候，有一個好習慣，是把我們的身分、聯絡資訊、和目的等訊息，告知server端。這些訊息，統稱為user agent  
+* 這麼做的目的是，當server端發生問題時，開發者有聯絡資訊可以聯絡到你  
+* 講師的作法，都是放"email_address 我主要的目的"這個字串到user_agent裡，範例如以下：  
+
+```{r}
+r3 = GET(url = "https://v2.jokeapi.dev/joke/Programming?type=single",
+         user_agent("my@email.address; I like jokes"))
+r3
+```
+
+* 其實我們這邊得到的結果，和剛剛是一模一樣的，但對對方來說，他們server就有讀到我傳過去的友善訊息  
+
+
+## POST
+
+* 我這邊找不到一個有感覺的例子，所以只好先介紹語法，之後再補好例子  
+* 這邊要互動的API，是`httr`官方讓我們練習的API，可以去這網站看看:`http://httpbin.org/`  
+* 那path = "post"時，就是讓你下post的地方，所以等一下要用的url就是`http://httpbin.org/post`  
+* POST和GET的差別，就是他必填的欄位包括url和body。其中，body是要傳給server的訊息。  
+* 最常放在body裡的東西，就是named list，如下：  
+
+```{r}
+r <- POST("http://httpbin.org/post", 
+          body = list(a = 1, b = 2, c = 3))
+```
+
+* 那POST裡面也有`encode = `的參數，可以幫你轉成這個格式後傳給server  
+* 例如以下：  
+
+```{r}
+url <- "http://httpbin.org/post"
+body <- list(a = 1, b = 2, c = 3)
+# Form encoded
+r <- POST(url, body = body, encode = "form")
+# Multipart encoded
+r <- POST(url, body = body, encode = "multipart")
+# JSON encoded
+r <- POST(url, body = body, encode = "json")
+```
+
+* POST的body也可以放檔案，例如以下  
+
+```{r eval = FALSE}
+POST(url, body = upload_file("mypath.txt"))
+POST(url, body = list(x = upload_file("mypath.txt")))
+```
+
+
+# Using API clients  
+
+## 範例一：Wikipedia    
+
+* Hadley Wickham在Wikipedia網站上的介紹，是屬於"人看的website": https://en.wikipedia.org/wiki/Hadley_Wickham 
+* 而Wikipedia還有建一個"讓機器看的網站"，可以讓你寫code，去抓這個page的一些背後資訊(例如：這個page是啥時建的、有多少人瀏覽過這個page...)  
+* 那...對R User來說，當然就在想我要寫什麼code去和這個API互動了。而Wikipedia的API很貼心的有做R的API client，叫做`pageviews`這個package，所以，其實就和我們平常用package的習慣一樣，我們可以直接用此package的function去和API作互動。例如，我可以用`article_pageviews()`將這個page有多少人觀看的資訊給拉下來：    
+
+```{r}
+# Load pageviews
+library(pageviews)
+
+# Get the pageviews for "Hadley Wickham"
+hadley_pageviews <- article_pageviews(project = "en.wikipedia", "Hadley Wickham")
+
+# Examine the resulting object
+hadley_pageviews
+```
+
+## 範例二：Quantl (需要Access tokens)  
+
+* 雖然API對user來說很方便，想看什麼就可以去和Server互動來抓資料，但...對維護API的工程師們來說，可不希望毫無限制的讓User這樣一直抓資料  
+* 因為，有些心懷不軌的user，可能寫了背景程式，每秒都在GET或POST，造成Server的crash  
+* 所以，通常我們要和API互動前，都要先取得"access tokens"，也就是server端發給你的通行證    
+* 這就像去外校圖書館要換證一樣，如果你在圖書館裡搗亂，我就可以知道你的身分，然後對你提出處罰  
+* API也是一樣的，user通常要先透過註冊的方式，獲取"access token"，那...維護這個server的工程師，就可以去看有哪些user在搗亂，而且可以直接對這些user實施限制流量、停權等措施，讓他不能再亂  
+* 所以，像`Quantl`這個網站所做的API，以及他使用的API client，就會要你先註冊，才會發給你token，讓你用他的API  
+* Quandl API 可以得到各種financial and economical data  
+* 經過一番操作後，得到以下request url：  https://www.quandl.com/api/v3/datasets/WIKI/FB/data.json?auth_token=i83asDsiWUUyfoypkgMz
+* 可以發現，他的value有python的一維list(key = column_names)，也有python的二維list(key = data)。而二維list其實就是byrow的matrix  
+* 看一下讀下來的結果  
+
+```{r}
+# Definition of quandl_url
+quandl_url <- "https://www.quandl.com/api/v3/datasets/WIKI/FB/data.json?auth_token=i83asDsiWUUyfoypkgMz"
+
+# Import Quandl data: quandl_data
+quandl_data = fromJSON(quandl_url)
+
+# Print structure of quandl_data
+str(quandl_data)
+```
+
+* 去檢查column_names這個element，是不是從剛剛的python一維list，轉成R的vector:  
+
+```{r}
+quandl_data$dataset_data$column_names
+```
+
+* 也去檢查一下data這個element，是不是matrix的type  
+
+```{r}
+class(quandl_data$dataset_data$data)
+```
+
+* 果然都沒錯!  
+
+
